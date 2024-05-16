@@ -1,0 +1,187 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <queue>
+#include <string>
+
+struct Process {
+    int pid;
+    int arrival_time;
+    int burst_time;
+    int remaining_time;
+    int finish_time;
+    int waiting_time;
+    int turnaround_time;
+
+    Process(int id, int arrival, int burst) :
+        pid(id), arrival_time(arrival), burst_time(burst),
+        remaining_time(burst), finish_time(0), waiting_time(0), turnaround_time(0) {}
+};
+
+void calculate_waiting_time(std::vector<Process>& processes) {
+    int current_time = 0;
+    for (auto& process : processes) {
+        current_time = std::max(current_time, process.arrival_time);
+        process.waiting_time = current_time - process.arrival_time;
+        current_time += process.burst_time;
+        process.finish_time = current_time;
+        process.turnaround_time = process.finish_time - process.arrival_time;
+    }
+}
+
+double calculate_cpu_utilization(const std::vector<Process>& processes) {
+    int total_burst_time = 0;
+    for (const auto& process : processes) {
+        total_burst_time += process.burst_time;
+    }
+    int last_finish_time = processes.empty() ? 0 : processes.back().finish_time;
+    return last_finish_time != 0 ? static_cast<double>(total_burst_time) / last_finish_time : 0.0;
+}
+
+void print_gantt_chart(const std::vector<Process>& processes, int quantum) {
+    std::cout << "Gantt Chart (Quantum: " << quantum << "):\n";
+    for (const auto& process : processes) {
+        std::cout << "P" << process.pid << " | ";
+    }
+    std::cout << "\n";
+}
+
+void print_results(const std::vector<Process>& processes) {
+    std::cout << "Process\tArrival\tBurst\tFinish\tWaiting\tTurnaround\n";
+    for (const auto& process : processes) {
+        std::cout << process.pid << "\t" << process.arrival_time << "\t" << process.burst_time << "\t"
+            << process.finish_time << "\t" << process.waiting_time << "\t" << process.turnaround_time << "\n";
+    }
+    double avg_waiting_time = 0;
+    double avg_turnaround_time = 0;
+    for (const auto& process : processes) {
+        avg_waiting_time += process.waiting_time;
+        avg_turnaround_time += process.turnaround_time;
+    }
+    avg_waiting_time /= !processes.empty() ? processes.size() : 1;
+    avg_turnaround_time /= !processes.empty() ? processes.size() : 1;
+    std::cout << "\nAverage Waiting Time: " << avg_waiting_time << "\n";
+    std::cout << "Average Turnaround Time: " << avg_turnaround_time << "\n";
+    std::cout << "CPU Utilization: " << calculate_cpu_utilization(processes) << "\n";
+}
+
+std::vector<Process> fcfs(std::vector<Process> processes) {
+    std::sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.arrival_time < b.arrival_time;
+        });
+    calculate_waiting_time(processes);
+    return processes;
+}
+
+std::vector<Process> srt(std::vector<Process> processes) {
+    std::vector<Process> completed_processes;
+    auto compare = [](const Process& a, const Process& b) { return a.remaining_time > b.remaining_time; };
+    std::priority_queue<Process, std::vector<Process>, decltype(compare)> ready_queue(compare);
+    int current_time = 0;
+
+    while (!processes.empty() || !ready_queue.empty()) {
+        while (!processes.empty() && processes.front().arrival_time <= current_time) {
+            ready_queue.push(processes.front());
+            processes.erase(processes.begin());
+        }
+        if (!ready_queue.empty()) {
+            Process current_process = ready_queue.top();
+            ready_queue.pop();
+            current_time++;
+            current_process.remaining_time--;
+            if (current_process.remaining_time > 0) {
+                ready_queue.push(current_process);
+            }
+            else {
+                current_process.finish_time = current_time;
+                current_process.turnaround_time = current_process.finish_time - current_process.arrival_time;
+                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time;
+                completed_processes.push_back(current_process);
+            }
+        }
+        else {
+            current_time++;
+        }
+    }
+
+    return completed_processes;
+}
+
+std::vector<Process> round_robin(std::vector<Process> processes, int quantum) {
+    std::queue<Process> ready_queue;
+    std::vector<Process> completed_processes;
+    int current_time = 0;
+
+    while (!processes.empty() || !ready_queue.empty()) {
+        while (!processes.empty() && processes.front().arrival_time <= current_time) {
+            ready_queue.push(processes.front());
+            processes.erase(processes.begin());
+        }
+
+        if (!ready_queue.empty()) {
+            Process current_process = ready_queue.front();
+            ready_queue.pop();
+
+            if (current_process.remaining_time > quantum) {
+                current_time += quantum;
+                current_process.remaining_time -= quantum;
+                ready_queue.push(current_process);
+            }
+            else {
+                current_time += current_process.remaining_time;
+                current_process.remaining_time = 0;
+                current_process.finish_time = current_time;
+                current_process.turnaround_time = current_process.finish_time - current_process.arrival_time;
+                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time;
+                completed_processes.push_back(current_process);
+            }
+        }
+        else {
+            current_time++;
+        }
+    }
+
+    return completed_processes;
+}
+
+int main() {
+    std::ifstream file("C:/Users/USER/Desktop/processes.txt");
+    if (!file) {
+        std::cerr << "Error: Could not open file.\n";
+        return 1;
+    }
+
+    int quantum = 2;
+
+    std::vector<Process> processes;
+    int pid, arrival_time, burst_time;
+    while (file >> pid >> arrival_time >> burst_time) {
+        processes.push_back(Process(pid, arrival_time, burst_time));
+    }
+    file.close();
+
+    std::sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.arrival_time < b.arrival_time;
+        });
+
+    std::cout << "=== FCFS ===\n";
+    std::vector<Process> fcfs_processes = fcfs(processes);
+    print_results(fcfs_processes);
+    print_gantt_chart(fcfs_processes, quantum);
+    std::cout << "\n";
+
+    std::cout << "=== Shortest Remaining Time (SRT) ===\n";
+    std::vector<Process> srt_processes = srt(processes);
+    print_results(srt_processes);
+    print_gantt_chart(srt_processes, quantum);
+    std::cout << "\n";
+
+    std::cout << "=== Round Robin (RR) ===\n";
+    std::vector<Process> rr_processes = round_robin(processes, quantum);
+    print_results(rr_processes);
+    print_gantt_chart(rr_processes, quantum);
+    std::cout << "\n";
+
+    return 0;
+}
